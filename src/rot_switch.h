@@ -13,15 +13,16 @@ public:
 
     // Polling methods
     void poll();
-    bool valueChanged();
 
     // Setters and getters
     void setDebug(bool debug);
     int getValue();
+    int getChangeDirection();
 private:
     int PIN_1, PIN_2, PIN_3, PIN_4, PIN_5;
-    int CURRENT_POSITION = 0, LAST_POSITION = 0;
+    int CURRENT_POSITION = 0, LAST_POSITION = 0, MOVEMENT_DIRECTION = 0;
     bool DEBUG = false, SETUP_DONE = false;
 
-    void findPosition();
+    int findPosition();
+    bool valueChanged();
 };
