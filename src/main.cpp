@@ -13,13 +13,9 @@
  * - 1x Joystick with button
  */
 
-// Hardware dependancies
 #include <Arduino.h>
-#include <pot_switch.h>
-#include <rot_switch.h>
-#include <LiquidCrystal_I2C.h>
 
-// Software dependancies
+// Menu dependancies
 #include <MenuItem.h>
 #include <ItemSubMenu.h>
 #include <ItemCommand.h>
@@ -27,7 +23,11 @@
 #include <ItemProgress.h>
 #include <ItemInput.h>
 #include <LcdMenu.h>
+
+// Frontplate dependancies
 #include <AxisJoystick.h>
+#include <pot_switch.h>
+#include <rot_switch.h>
 
 const float VERSION = 0.001;
 
@@ -36,7 +36,6 @@ const int BAUD_RATE = 9600;
 const bool DEBUG = true;
 const int LCD_ADDRESS = 0x3F;
 const int LCD_ROWS = 4, LCD_COLS = 20;
-const int ARDUINO_I2C_ADDRESS = 15;
 
 /*
  * Define the pin configuration
@@ -53,20 +52,82 @@ const int ROT_SWITCH_1_PIN = 4, ROT_SWITCH_2_PIN = 5, ROT_SWITCH_3_PIN = 6, ROT_
 // Power button pins
 const int POWER_BUTTON_1_PIN = 9, POWER_BUTTON_2_PIN = 10, POWER_BUTTON_3_PIN = 11, POWER_BUTTON_4_PIN = 12, POWER_BUTTON_5_PIN = 13;
 
+const int RPI_RELAY_PIN = 7;
+const int TEENSY_RELAY_PIN = 6;
+const int ESP32_RELAY_PIN = 5;
+const int OPAMP_RELAY_PIN = 4;
+
+const int CASE_INTRUSION_PIN = 9;
+const int BUZZER_PIN = 3;
+const int BUILDIN_LED_PIN = 13;
+
+const int FIRE_SENSOR_PIN = A7;
+const int RPI_POWER_MON_PIN = A1;
+const int TEENSY_POWER_MON_PIN = A2;
+const int ESP32_POWER_MON_PIN = A3;
+const int OPAMP_POWER_MON_PIN = A0;
 
 /*
- * Switch states and values
+ * State and threshold definitions
  */
-bool POWER_BUTTON_1_STATE, POWER_BUTTON_2_STATE, POWER_BUTTON_3_STATE, POWER_BUTTON_4_STATE, POWER_BUTTON_5_STATE;
+// Power buttons
+bool POWER_BUTTON_1_STATE = false;
+bool POWER_BUTTON_2_STATE = false;
+bool POWER_BUTTON_3_STATE = false;
+bool POWER_BUTTON_4_STATE = false;
+bool POWER_BUTTON_5_STATE = false;
+
+// Relays
+bool RPI_RELAY_STATE = false;
+bool TEENSY_RELAY_STATE = false;
+bool ESP32_RELAY_STATE = false;
+bool OPAMP_RELAY_STATE = false;
+
+// Sensors
+int FIRE_SENSOR_THRESHOLD = 850;
+
+// Power Monitors
+int GENERAL_POWER_MON_THRESHOLD = 90; // % of the power
+
+float RPI_POWER_MON_DIV_FACTOR = 1; // 1 if no divider is used
+float RPI_POWER_MON_VALUE = 0;
+int RPI_POWER_MON_THRESHOLD = GENERAL_POWER_MON_THRESHOLD;
+
+float TEENSY_POWER_MON_DIV_FACTOR = 1; // 3.3V / 5V approx 0.6
+float TEENSY_POWER_MON_VALUE = 0;
+int TEENSY_POWER_MON_THRESHOLD = GENERAL_POWER_MON_THRESHOLD;
+
+float ESP32_POWER_MON_DIV_FACTOR = 1;
+float ESP32_POWER_MON_VALUE = 0;
+int ESP32_POWER_MON_THRESHOLD = GENERAL_POWER_MON_THRESHOLD;
+
+float OPAMP_POWER_MON_DIV_FACTOR = 1;
+float OPAMP_POWER_MON_VALUE = 0;
+int OPAMP_POWER_MON_THRESHOLD = GENERAL_POWER_MON_THRESHOLD;
+
+// Error states (Flashing LED)
+bool RPI_POWER_MON_ERROR_STATE = false;
+bool TEENSY_POWER_MON_ERROR_STATE = false;
+bool ESP32_POWER_MON_ERROR_STATE = false;
+bool OPAMP_POWER_MON_ERROR_STATE = false;
+
+// Emergency states (Flashing LED, power cut and buzzer on)
+bool CASE_INTRUSION_ERROR_STATE = false;
+bool FIRE_SENSOR_ERROR_STATE = false;
+
+const int NUM_ERROR_FLAGS = 6;
 
 // Function prototypes
-void move_back();
-void read_power_buttons();
-void move_joystick();
+void menuMoveBack();
+char *intMapping(uint16_t progress);
+char *floatMapping(uint16_t progress);
+char *boolMapping(uint16_t progress);
 
-char* intMapping(uint16_t progress);
-char* floatMapping(uint16_t progress);
-char* boolMapping(uint16_t progress);
+void updateButtons();
+void updateJoystickMove();
+void updateRelays();
+void updatePowerMonitors();
+void updateErrorStates();
 
 /*
  * Define the menu structure
@@ -102,26 +163,24 @@ MAIN_MENU(
 
 SUB_MENU(infoMenu, mainMenu,
          ITEM_PROGRESS("Version", VERSION, intMapping, NULL),
-         ITEM_COMMAND("Back", move_back));
+         ITEM_COMMAND("Back", menuMoveBack));
 
 SUB_MENU(modesMenu, mainMenu,
          ITEM_BASIC("DMM"),
          ITEM_BASIC("FunctionGenerator"),
          ITEM_BASIC("XY-Stage"),
          ITEM_BASIC("DataLogger"),
-         ITEM_COMMAND("Back", move_back));
+         ITEM_COMMAND("Back", menuMoveBack));
 
 SUB_MENU(rootSettingsMenu, mainMenu,
-        //  ITEM_SUBMENU("Safety", safetyMenu),
+         //  ITEM_SUBMENU("Safety", safetyMenu),
          ITEM_SUBMENU("Display", displayMenu),
-         ITEM_COMMAND("Back", move_back));
-
+         ITEM_COMMAND("Back", menuMoveBack));
 
 SUB_MENU(displayMenu, rootSettingsMenu,
          ITEM_BASIC("Brightness"),
          ITEM_BASIC("Contrast"),
-         ITEM_COMMAND("Back", move_back));
-
+         ITEM_COMMAND("Back", menuMoveBack));
 
 /*
  * Create the frontplate instances
@@ -145,12 +204,19 @@ void setup()
     Serial.println("INFO: Serial connection established");
   }
 
-  // Initialize the power button pins
+  // Initialize the input pins
   pinMode(POWER_BUTTON_1_PIN, INPUT);
   pinMode(POWER_BUTTON_2_PIN, INPUT);
   pinMode(POWER_BUTTON_3_PIN, INPUT);
   pinMode(POWER_BUTTON_4_PIN, INPUT);
   pinMode(POWER_BUTTON_5_PIN, INPUT);
+  pinMode(CASE_INTRUSION_PIN, INPUT);
+  pinMode(RPI_RELAY_PIN, OUTPUT);
+  pinMode(TEENSY_RELAY_PIN, OUTPUT);
+  pinMode(ESP32_RELAY_PIN, OUTPUT);
+  pinMode(OPAMP_RELAY_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(BUILDIN_LED_PIN, OUTPUT);
 
   // Initialize the frontplate components
   r_switch.setup();
@@ -171,19 +237,98 @@ void setup()
 
 void loop()
 {
-  // Read the power button states
-  read_power_buttons();
+  // Run the update functions
+  updateButtons();
+  updatePowerMonitors();
+  updateRelays();
+  updateErrorStates();
+  delay(50);  // wait for a bit
+}
+
+void menuMoveBack()
+{
+  lcd_menu.back();
+}
+
+/*
+ * Conversion methods for displaying numbers in the menu
+ */
+
+char *intMapping(uint16_t progress)
+{
+  // Map the progress value to a new range (100 to 200)
+  long mapped = mapProgress(progress, 100L, 200L);
+
+  // Buffer to store the converted stringV
+  static char buffer[10];
+
+  // Convert the mapped value to a string
+  itoa(mapped, buffer, 10);
+
+  // Concatenate the string with the character 'm'
+  concat(buffer, 'm', buffer);
+
+  // Return the resulting string
+  return buffer;
+}
+
+char *floatMapping(uint16_t progress)
+{
+  // Normalize the progress value and map it to the specified floating-point
+  // range
+  float floatValue = mapProgress(progress, -1.0f, 1.0f);
+
+  // Buffer to store the converted string
+  // static char buffer[10]; // On Arduino
+  char buffer[20];
+
+  // Convert the floating-point value to a string with 4 characters (including
+  // decimal point) and 2 decimal places
+  // dtostrf(floatValue, 4, 2, buffer);  // On Arduino
+  snprintf(buffer, sizeof(buffer), "%4.2f", floatValue);
+
+  // Concatenate the string with the character 'A'
+  concat(buffer, 'A', buffer);
+
+  // Return the resulting string
+  return buffer;
+}
+
+char *boolMapping(uint16_t progress)
+{
+  // Map the progress value to a boolean value
+  bool boolValue = progress > 0;
+
+  // Buffer to store the converted string
+  static char buffer[10];
+
+  // Convert the boolean value to a string
+  itoa(boolValue, buffer, 10);
+
+  // Return the resulting string
+  return buffer;
+}
+
+/*
+ * Updating methods
+ */
+
+// Update the frondplate buttons
+void updateButtons()
+{
+  POWER_BUTTON_1_STATE = digitalRead(POWER_BUTTON_1_PIN);
+  POWER_BUTTON_2_STATE = digitalRead(POWER_BUTTON_2_PIN);
+  POWER_BUTTON_3_STATE = digitalRead(POWER_BUTTON_3_PIN);
+  POWER_BUTTON_4_STATE = digitalRead(POWER_BUTTON_4_PIN);
+  POWER_BUTTON_5_STATE = digitalRead(POWER_BUTTON_5_PIN);
 
   // Read the potentiometer and rotary switch
   p_switch.poll();
   r_switch.poll();
-
-  // Read the joystick
-  move_joystick();
-
+  updateJoystickMove();
 }
 
-void move_joystick()
+void updateJoystickMove()
 {
   // Poll the joystic movement
   if (joystick.isUp())
@@ -208,78 +353,84 @@ void move_joystick()
   }
 }
 
-void move_back()
+// Update the relay states
+void updateRelays()
 {
-  lcd_menu.back();
+  digitalWrite(RPI_RELAY_PIN, RPI_RELAY_STATE);
+  digitalWrite(TEENSY_RELAY_PIN, TEENSY_RELAY_STATE);
+  digitalWrite(ESP32_RELAY_PIN, ESP32_RELAY_STATE);
+  digitalWrite(OPAMP_RELAY_PIN, OPAMP_RELAY_STATE);
 }
 
-void read_power_buttons()
+// Update the power monitor values
+void updatePowerMonitors()
 {
-  POWER_BUTTON_1_STATE = digitalRead(POWER_BUTTON_1_PIN);
-  POWER_BUTTON_2_STATE = digitalRead(POWER_BUTTON_2_PIN);
-  POWER_BUTTON_3_STATE = digitalRead(POWER_BUTTON_3_PIN);
-  POWER_BUTTON_4_STATE = digitalRead(POWER_BUTTON_4_PIN);
-  POWER_BUTTON_5_STATE = digitalRead(POWER_BUTTON_5_PIN);
+  RPI_POWER_MON_VALUE = analogRead(RPI_POWER_MON_PIN) / RPI_POWER_MON_DIV_FACTOR;
+  TEENSY_POWER_MON_VALUE = analogRead(TEENSY_POWER_MON_PIN) / TEENSY_POWER_MON_DIV_FACTOR;
+  ESP32_POWER_MON_VALUE = analogRead(ESP32_POWER_MON_PIN) / ESP32_POWER_MON_DIV_FACTOR;
+  OPAMP_POWER_MON_VALUE = analogRead(OPAMP_POWER_MON_PIN) / OPAMP_POWER_MON_DIV_FACTOR;
 }
 
-/*
- * Conversion methods for displaying numbers in the menu
- */
+// Update the error states
+void updateErrorStates()
+{
+  // Update the RPI power monitor error state
+  if (RPI_POWER_MON_VALUE < RPI_POWER_MON_THRESHOLD && RPI_RELAY_STATE)
+  {
+    RPI_POWER_MON_ERROR_STATE = true;
+  }
+  else
+  {
+    RPI_POWER_MON_ERROR_STATE = false;
+  }
 
-char* intMapping(uint16_t progress) {
-    // Map the progress value to a new range (100 to 200)
-    long mapped = mapProgress(progress, 100L, 200L);
+  // Update the Teensy power monitor error state
+  if (TEENSY_POWER_MON_VALUE < TEENSY_POWER_MON_THRESHOLD && TEENSY_RELAY_STATE)
+  {
+    TEENSY_POWER_MON_ERROR_STATE = true;
+  }
+  else
+  {
+    TEENSY_POWER_MON_ERROR_STATE = false;
+  }
 
-    // Buffer to store the converted stringV
-    static char buffer[10];
+  // Update the ESP32 power monitor error state
+  if (ESP32_POWER_MON_VALUE < ESP32_POWER_MON_THRESHOLD && ESP32_RELAY_STATE)
+  {
+    ESP32_POWER_MON_ERROR_STATE = true;
+  }
+  else
+  {
+    ESP32_POWER_MON_ERROR_STATE = false;
+  }
 
-    // Convert the mapped value to a string
-    itoa(mapped, buffer, 10);
+  // Update the OPAMP power monitor error state
+  if (OPAMP_POWER_MON_VALUE < OPAMP_POWER_MON_THRESHOLD && OPAMP_RELAY_STATE)
+  {
+    OPAMP_POWER_MON_ERROR_STATE = true;
+  }
+  else
+  {
+    OPAMP_POWER_MON_ERROR_STATE = false;
+  }
 
-    // Concatenate the string with the character 'm'
-    concat(buffer, 'm', buffer);
+  // Update the case intrusion error state
+  if (digitalRead(CASE_INTRUSION_PIN) == HIGH)
+  {
+    CASE_INTRUSION_ERROR_STATE = true;
+  }
+  else
+  {
+    CASE_INTRUSION_ERROR_STATE = false;
+  }
 
-    // Return the resulting string
-    return buffer;
-}
-
-char* floatMapping(uint16_t progress) {
-    // Normalize the progress value and map it to the specified floating-point
-    // range
-    float floatValue = mapProgress(progress, -1.0f, 1.0f);
-
-    // Buffer to store the converted string
-    // static char buffer[10]; // On Arduino
-    char buffer[20];
-
-    // Convert the floating-point value to a string with 4 characters (including
-    // decimal point) and 2 decimal places
-    // dtostrf(floatValue, 4, 2, buffer);  // On Arduino
-    snprintf(buffer, sizeof(buffer), "%4.2f", floatValue);
-
-    // Concatenate the string with the character 'A'
-    concat(buffer, 'A', buffer);
-
-    // Return the resulting string
-    return buffer;
-}
-
-char* boolMapping(uint16_t progress) {
-    // Map the progress value to a boolean value
-    bool boolValue = progress > 0;
-
-    // Buffer to store the converted string
-    static char buffer[10];
-
-    // Convert the boolean value to a string
-    itoa(boolValue, buffer, 10);
-
-    // Return the resulting string
-    return buffer;
-}
-
-
-void displayCallback(){
-    // Display the menu
-    // lcd_menu.display();
+  // Update the fire sensor error state
+  if (analogRead(FIRE_SENSOR_PIN) > FIRE_SENSOR_THRESHOLD)
+  {
+    FIRE_SENSOR_ERROR_STATE = true;
+  }
+  else
+  {
+    FIRE_SENSOR_ERROR_STATE = false;
+  }
 }
