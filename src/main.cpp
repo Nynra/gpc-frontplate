@@ -11,7 +11,7 @@
 #include <ItemToggle.h>
 #include <LcdMenu.h> // Should always be imported as the last menu component
 
-
+// Some global constants
 const bool DEBUG = true;
 const int BAUDRATE = 9600;
 const unsigned int DELAY_TIME = 100;
@@ -19,8 +19,11 @@ const unsigned int DELAY_TIME = 100;
 const int LCD_ADDRESS = 0x27;
 const int LCD_ROWS = 4, LCD_COLS = 20;
 
+bool INTRUSION_PROTECTION_ACTIVE = true;
+bool FIRE_ALARM_ACTIVE = true;
+
 /*
- * Define the pin configuration
+ * Define the pin configuration and variables
  */
 const int INTERNAL_LED_PIN = 13;
 // Joystick
@@ -28,9 +31,26 @@ const int JOY_BUTTON_PIN = 27;
 const int JOY_X_PIN = A13;
 const int JOY_Y_PIN = A7;
 
+// Relays
+const int RELAY_1_PIN = 28;
+const int RELAY_2_PIN = 29;
+const int RELAY_3_PIN = 30;
+const int RELAY_4_PIN = 31;
+
+bool RELAY_1_STATE = false;
+bool RELAY_2_STATE = false;
+bool RELAY_3_STATE = false;
+bool RELAY_4_STATE = false;
+
 // Function prototypes
-void menuMoveBackCallback();
-void toggleBacklightCallback(uint16_t isOn);
+void menuMoveBack();
+void toggleBacklight(uint16_t isOn);
+void toggleIntrusionProtection(uint16_t isOn);
+void toggleFireAlarm(uint16_t isOn);
+void toggleRelay1(uint16_t isOn);
+void toggleRelay2(uint16_t isOn);
+void toggleRelay3(uint16_t isOn);
+void toggleRelay4(uint16_t isOn);
 // char *intMapping(uint16_t progress);
 // char *floatMapping(uint16_t progress);
 // char *boolMapping(uint16_t progress);
@@ -57,28 +77,64 @@ void toggleBacklightCallback(uint16_t isOn);
 
 // Define the menus objects
 extern MenuItem *rootSettingsMenu[];
-// extern MenuItem *modesMenu[];
+extern MenuItem *modesMenu[];
 extern MenuItem *infoMenu[];
+extern MenuItem *relayPowerMenu[];
+extern MenuItem *dmmMenu[];
+extern MenuItem *functionGeneratorMenu[];
+extern MenuItem *xyStageMenu[];
+extern MenuItem *dataLoggerMenu[];
 
 // Define the menus
 MAIN_MENU(
     ITEM_SUBMENU("Info", infoMenu),
+    ITEM_SUBMENU("Modes", modesMenu),
+    ITEM_SUBMENU("Power", relayPowerMenu),
     ITEM_SUBMENU("Settings", rootSettingsMenu));
 
 SUB_MENU(infoMenu, mainMenu,
          ITEM_BASIC("Version"),
-         ITEM_COMMAND("Back", menuMoveBackCallback));
+         ITEM_COMMAND("Back", menuMoveBack));
 
 SUB_MENU(rootSettingsMenu, mainMenu,
-            ITEM_TOGGLE("LCD Backlight", "ON", "OFF", toggleBacklightCallback),
-            ITEM_COMMAND("Back", menuMoveBackCallback));
+         // Init the backlight to say on
+         ITEM_TOGGLE("Backlight ", "ON", "OFF", toggleBacklight),
+         ITEM_TOGGLE("Anti intr.", "ON", "OFF", toggleIntrusionProtection),
+         ITEM_TOGGLE("Fire alrm.", "ON", "OFF", toggleFireAlarm),
+         ITEM_COMMAND("Back", menuMoveBack));
+
+SUB_MENU(relayPowerMenu, mainMenu,
+         ITEM_TOGGLE("RPI power   ", "ON", "OFF", toggleRelay1),
+         ITEM_TOGGLE("ESP power   ", "ON", "OFF", toggleRelay2),
+         ITEM_TOGGLE("Teensy power", "ON", "OFF", toggleRelay3),
+         ITEM_TOGGLE("Opamp power ", "ON", "OFF", toggleRelay4),
+         ITEM_COMMAND("Back", menuMoveBack));
+
+SUB_MENU(modesMenu, mainMenu,
+         ITEM_SUBMENU("DMM", dmmMenu),
+         ITEM_SUBMENU("Function Generator", functionGeneratorMenu),
+         ITEM_SUBMENU("XY-Stage", xyStageMenu),
+         ITEM_SUBMENU("Data Logger", dataLoggerMenu),
+         ITEM_COMMAND("Back", menuMoveBack));
+
+SUB_MENU(dmmMenu, modesMenu,
+         ITEM_BASIC("Configuration"),
+         ITEM_COMMAND("Back", menuMoveBack));
+
+SUB_MENU(functionGeneratorMenu, modesMenu,
+         ITEM_BASIC("Configuration"),
+         ITEM_COMMAND("Back", menuMoveBack));
+
+SUB_MENU(xyStageMenu, modesMenu,
+         ITEM_BASIC("Configuration"),
+         ITEM_COMMAND("Back", menuMoveBack));
+
+SUB_MENU(dataLoggerMenu, modesMenu,
+         ITEM_BASIC("Configuration"),
+         ITEM_COMMAND("Back", menuMoveBack));
 
 AxisJoystick joystick(JOY_BUTTON_PIN, JOY_X_PIN, JOY_Y_PIN);
 LcdMenu lcd_menu(LCD_ROWS, LCD_COLS);
-
-void menuMoveBackCallback() { lcd_menu.back(); }
-
-void toggleBacklightCallback(uint16_t isOn) { lcd_menu.setBacklight(isOn); }
 
 void setup()
 {
@@ -89,9 +145,19 @@ void setup()
     }
 
     pinMode(INTERNAL_LED_PIN, OUTPUT);
+    pinMode(RELAY_1_PIN, OUTPUT);
+    pinMode(RELAY_2_PIN, OUTPUT);
+    pinMode(RELAY_3_PIN, OUTPUT);
+    pinMode(RELAY_4_PIN, OUTPUT);
 
     joystick.calibrate(0, 1023, 250);
 
+    // Set some menu toggles to the right state
+    rootSettingsMenu[1]->setIsOn(true);
+    rootSettingsMenu[2]->setIsOn(INTRUSION_PROTECTION_ACTIVE);
+    rootSettingsMenu[3]->setIsOn(FIRE_ALARM_ACTIVE);
+
+    // Set the backlight toggle in the root settings to on
     // Initialize the LCD
     lcd_menu.setupLcdWithMenu(LCD_ADDRESS, mainMenu);
 
@@ -127,6 +193,41 @@ void loop()
         // Serial.println("Joystick is not pressed");
         break;
     }
+}
+
+/*
+ * Menu callback functions
+ */
+void menuMoveBack() { lcd_menu.back(); }
+
+void toggleBacklight(uint16_t isOn) { lcd_menu.setBacklight(isOn); }
+
+void toggleIntrusionProtection(uint16_t isOn) { INTRUSION_PROTECTION_ACTIVE = isOn; }
+
+void toggleFireAlarm(uint16_t isOn) { FIRE_ALARM_ACTIVE = isOn; }
+
+void toggleRelay1(uint16_t isOn)
+{
+    RELAY_1_STATE = isOn;
+    digitalWrite(RELAY_1_PIN, isOn);
+}
+
+void toggleRelay2(uint16_t isOn)
+{
+    RELAY_2_STATE = isOn;
+    digitalWrite(RELAY_2_PIN, isOn);
+}
+
+void toggleRelay3(uint16_t isOn)
+{
+    RELAY_3_STATE = isOn;
+    digitalWrite(RELAY_3_PIN, isOn);
+}
+
+void toggleRelay4(uint16_t isOn)
+{
+    RELAY_4_STATE = isOn;
+    digitalWrite(RELAY_4_PIN, isOn);
 }
 
 /*
