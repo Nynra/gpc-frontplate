@@ -1,19 +1,22 @@
 #include <Arduino.h>
-#include <joystick.h>
+#include <AxisJoystick.h>
+#include <LcdMenu.h>
+#include <SimpleCLI.h>
 
 const bool DEBUG = true;
 const int BAUDRATE = 9600;
-const unsigned int DELAY_TIME = 100;
+const unsigned int DELAY_TIME = 250;
 
-const int X_PIN = A0, Y_PIN = A1, BUTTON_PIN = 2;
-Joystick joystick(X_PIN, Y_PIN, BUTTON_PIN);
+const int X_PIN = A13, Y_PIN = A7, BUTTON_PIN = 27;
+AxisJoystick joystick(BUTTON_PIN, X_PIN, Y_PIN);
 
 
 void setup()
 {
     Serial.begin(BAUDRATE);
     while (!Serial) { delay(10); }
-    joystick.setup();
+
+    joystick.calibrate(0, 1023, 250);
 
     if (DEBUG)
     {
@@ -23,6 +26,26 @@ void setup()
 
 void loop()
 {
-    joystick.poll();
     delay(DELAY_TIME);
+    switch (joystick.singleRead())
+    {
+        case Joystick::Move::PRESS:
+            Serial.println("Button is pressed");
+            break;
+        case Joystick::Move::UP:
+            Serial.println("Joystick is pressed up");
+            break;
+        case Joystick::Move::DOWN:
+            Serial.println("Joystick is pressed down");
+            break;
+        case Joystick::Move::RIGHT:
+            Serial.println("Joystick is pressed right");
+            break;
+        case Joystick::Move::LEFT:
+            Serial.println("Joystick is pressed left");
+            break;
+        case Joystick::Move::NOT:
+            // Serial.println("Joystick is not pressed");
+            break;
+    }
 }

@@ -17,6 +17,7 @@ public:
 
     // Setters and getters
     int getPotValue();
+    int getValue(){return getPotValue();}
     bool getButtonState();
     void setDebug(bool debug);
 
