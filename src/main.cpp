@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <AxisJoystick.h>
 #include <SimpleCLI.h>
+#include <rot_switch.h>
+#include <pot_switch.h>
 
 // #include <MenuItem.h>
 // #include <ItemProgress.h>
@@ -32,8 +34,8 @@ bool INTRUSION_STATE = false;
 
 // Joystick
 const int JOY_BUTTON_PIN = 26;
-const int JOY_X_PIN = A13;
-const int JOY_Y_PIN = A7;
+const int JOY_X_PIN = A7;
+const int JOY_Y_PIN = A13;
 
 // Relays
 const int RELAY_1_PIN = 39;
@@ -66,6 +68,16 @@ const int BUTTON_3_LED_PIN = 9;
 const int BUTTON_4_LED_PIN = 8;
 const int BUTTON_5_LED_PIN = 7;
 
+// Rotation switcg pins
+const int ROT_SWITCH_PIN_1 = 33;
+const int ROT_SWITCH_PIN_2 = 34;
+const int ROT_SWITCH_PIN_3 = 35;
+const int ROT_SWITCH_PIN_4 = 36;
+const int ROT_SWITCH_PIN_5 = 37;
+
+// Potentiometer switch
+const int POT_SWITCH_BUTTON_PIN = 38;
+const int POT_SWITCH_PIN = A0;
 
 // Function prototypes
 void menuMoveBack();
@@ -79,6 +91,14 @@ void toggleRelay4(uint16_t isOn);
 // char *intMapping(uint16_t progress);
 // char *floatMapping(uint16_t progress);
 // char *boolMapping(uint16_t progress);
+void updateButtonsStates();
+void updateJoyStick();
+void updateCli();
+
+AxisJoystick joystick(JOY_BUTTON_PIN, JOY_X_PIN, JOY_Y_PIN);
+LcdMenu lcd_menu(LCD_ROWS, LCD_COLS);
+RotSwitch rot_switch(ROT_SWITCH_PIN_1, ROT_SWITCH_PIN_2, ROT_SWITCH_PIN_3, ROT_SWITCH_PIN_4, ROT_SWITCH_PIN_5);
+PotSwitch pot_switch(POT_SWITCH_PIN, POT_SWITCH_BUTTON_PIN);
 
 /*
  * Define the menu structure
@@ -158,8 +178,87 @@ SUB_MENU(dataLoggerMenu, modesMenu,
          ITEM_BASIC("Configuration"),
          ITEM_COMMAND("Back", menuMoveBack));
 
-AxisJoystick joystick(JOY_BUTTON_PIN, JOY_X_PIN, JOY_Y_PIN);
-LcdMenu lcd_menu(LCD_ROWS, LCD_COLS);
+
+/*
+ * Define the CLI
+ * The CLI is only used to toggle the lcd led and ask for state info
+ */
+SimpleCLI cli;
+
+// Command definitions
+Command setBacklightCommand;
+Command getButtonState;
+Command getRotButtonState;
+Command getPotState;
+
+// Command callback definitions
+
+// Callback in case of an error
+void cliErrorCallback(cmd_error* e) {
+    CommandError cmdError(e); // Create wrapper object
+
+    Serial.print("ERROR: ");
+    Serial.println(cmdError.toString());
+
+    if (cmdError.hasCommand()) {
+        Serial.print("Did you mean \"");
+        Serial.print(cmdError.getCommand().toString());
+        Serial.println("\"?");
+    }
+}
+
+// Turn the backlight on or off
+void setBacklightCommandCallback(cmd* c)
+{
+    Command cmd(c);
+    Argument ledState = cmd.getArgument(0);
+
+    bool isOn = ledState.getValue().toInt() > 0;
+    toggleBacklight(isOn);
+
+    // Also change in the LCD menu
+    rootSettingsMenu[1]->setIsOn(true);
+}
+
+// Get the state of all the buttons in 5 bits
+void getButtonStateCallback(cmd* c)
+{
+    // Update the button states
+    updateButtonsStates();
+
+    // Create the byte to send
+    uint8_t buttonState = 0;
+    buttonState |= BUTTON_1_STATE << 0;
+    buttonState |= BUTTON_2_STATE << 1;
+    buttonState |= BUTTON_3_STATE << 2;
+    buttonState |= BUTTON_4_STATE << 3;
+    buttonState |= BUTTON_5_STATE << 4;
+
+    // Send the byte
+    Serial.println(buttonState);
+}
+
+// Get the state of the rotary button
+void getRotButtonStateCallback(cmd* c)
+{
+    int rotButtonState = rot_switch.getValue();
+    Serial.println(rotButtonState);
+}
+
+// Get the state of the potentiometer
+void getPotStateCallback(cmd* c)
+{
+    bool potSwitchState = pot_switch.getButtonState();
+    if (potSwitchState)
+    {
+        int potValue = pot_switch.getValue();
+        Serial.println(potValue);
+    }
+    else
+    {
+        Serial.println("0");
+    }
+}
 
 void setup()
 {
@@ -201,16 +300,34 @@ void setup()
     // Initialize the LCD
     lcd_menu.setupLcdWithMenu(LCD_ADDRESS, mainMenu);
 
+    // Initialize the CLI
+    cli.setOnError(cliErrorCallback); // Set error Callback
+    setBacklightCommand = cli.addSingleArgumentCommand("sb", setBacklightCommandCallback);
+
+    getButtonState = cli.addCommand("gb", getButtonStateCallback);
+    getRotButtonState = cli.addCommand("grb", getRotButtonStateCallback);
+    getPotState = cli.addCommand("gp", getPotStateCallback);
+
+    if (!setBacklightCommand || !getButtonState || !getRotButtonState || !getPotState)
+    {
+        Serial.println("Failed to add commands to the CLI");
+    }
+
     if (DEBUG)
     {
-        Serial.println("Joystick test setup complete");
+        Serial.println("Setup complete");
     }
 }
 
 void loop()
 {
     delay(DELAY_TIME);
+    updateJoyStick();
+    updateCli();
+}
 
+void updateJoyStick()
+{
     // Read the joystick to navigate the menu
     switch (joystick.singleRead())
     {
@@ -232,6 +349,23 @@ void loop()
     case Joystick::Move::NOT:
         // Serial.println("Joystick is not pressed");
         break;
+    }
+}
+
+void updateCli()
+{
+    // Check if there is a new command
+    if (Serial.available() > 0)
+    {
+        // Read out string from the serial monitor
+        String input = Serial.readStringUntil('\n');
+
+        // Echo the user input
+        Serial.print("# ");
+        Serial.println(input);
+
+        // Parse the user input into the CLI
+        cli.parse(input);
     }
 }
 
