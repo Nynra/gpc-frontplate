@@ -26,21 +26,46 @@ bool FIRE_ALARM_ACTIVE = true;
  * Define the pin configuration and variables
  */
 const int INTERNAL_LED_PIN = 13;
+const int INTRUSION_PIN = 39;
+
+bool INTRUSION_STATE = false;
+
 // Joystick
-const int JOY_BUTTON_PIN = 27;
+const int JOY_BUTTON_PIN = 26;
 const int JOY_X_PIN = A13;
 const int JOY_Y_PIN = A7;
 
 // Relays
-const int RELAY_1_PIN = 28;
-const int RELAY_2_PIN = 29;
-const int RELAY_3_PIN = 30;
-const int RELAY_4_PIN = 31;
+const int RELAY_1_PIN = 39;
+// const int RELAY_2_PIN = 40;
+// const int RELAY_3_PIN = 41;
+// const int RELAY_4_PIN = 42;
 
 bool RELAY_1_STATE = false;
-bool RELAY_2_STATE = false;
-bool RELAY_3_STATE = false;
-bool RELAY_4_STATE = false;
+// bool RELAY_2_STATE = false;
+// bool RELAY_3_STATE = false;
+// bool RELAY_4_STATE = false;
+
+// Buttons
+const int BUTTON_1_PIN = 28;
+const int BUTTON_2_PIN = 29;
+const int BUTTON_3_PIN = 30;
+const int BUTTON_4_PIN = 31;
+const int BUTTON_5_PIN = 32;
+
+bool BUTTON_1_STATE = false;
+bool BUTTON_2_STATE = false;
+bool BUTTON_3_STATE = false;
+bool BUTTON_4_STATE = false;
+bool BUTTON_5_STATE = false;
+
+// Button LED's
+const int BUTTON_1_LED_PIN = 11;
+const int BUTTON_2_LED_PIN = 10;
+const int BUTTON_3_LED_PIN = 9;
+const int BUTTON_4_LED_PIN = 8;
+const int BUTTON_5_LED_PIN = 7;
+
 
 // Function prototypes
 void menuMoveBack();
@@ -105,9 +130,9 @@ SUB_MENU(rootSettingsMenu, mainMenu,
 
 SUB_MENU(relayPowerMenu, mainMenu,
          ITEM_TOGGLE("RPI power   ", "ON", "OFF", toggleRelay1),
-         ITEM_TOGGLE("ESP power   ", "ON", "OFF", toggleRelay2),
-         ITEM_TOGGLE("Teensy power", "ON", "OFF", toggleRelay3),
-         ITEM_TOGGLE("Opamp power ", "ON", "OFF", toggleRelay4),
+        //  ITEM_TOGGLE("ESP power   ", "ON", "OFF", toggleRelay2),
+        //  ITEM_TOGGLE("Teensy power", "ON", "OFF", toggleRelay3),
+        //  ITEM_TOGGLE("Opamp power ", "ON", "OFF", toggleRelay4),
          ITEM_COMMAND("Back", menuMoveBack));
 
 SUB_MENU(modesMenu, mainMenu,
@@ -144,11 +169,26 @@ void setup()
         delay(10);
     }
 
+    // Set the LED pins
     pinMode(INTERNAL_LED_PIN, OUTPUT);
+    // pinMode(BUTTON_1_LED_PIN, OUTPUT);
+    // pinMode(BUTTON_2_LED_PIN, OUTPUT);
+    // pinMode(BUTTON_3_LED_PIN, OUTPUT);
+    // pinMode(BUTTON_4_LED_PIN, OUTPUT);
+    // pinMode(BUTTON_5_LED_PIN, OUTPUT);
+
+    // Set the button pins
+    pinMode(BUTTON_1_PIN, INPUT_PULLUP);
+    pinMode(BUTTON_2_PIN, INPUT_PULLUP);
+    pinMode(BUTTON_3_PIN, INPUT_PULLUP);
+    pinMode(BUTTON_4_PIN, INPUT_PULLUP);
+    pinMode(BUTTON_5_PIN, INPUT_PULLUP);
+
+    // Set the relay pins
     pinMode(RELAY_1_PIN, OUTPUT);
-    pinMode(RELAY_2_PIN, OUTPUT);
-    pinMode(RELAY_3_PIN, OUTPUT);
-    pinMode(RELAY_4_PIN, OUTPUT);
+    // pinMode(RELAY_2_PIN, OUTPUT);
+    // pinMode(RELAY_3_PIN, OUTPUT);
+    // pinMode(RELAY_4_PIN, OUTPUT);
 
     joystick.calibrate(0, 1023, 250);
 
@@ -171,7 +211,7 @@ void loop()
 {
     delay(DELAY_TIME);
 
-    // byte command = 0;
+    // Read the joystick to navigate the menu
     switch (joystick.singleRead())
     {
     case Joystick::Move::PRESS:
@@ -212,22 +252,45 @@ void toggleRelay1(uint16_t isOn)
     digitalWrite(RELAY_1_PIN, isOn);
 }
 
-void toggleRelay2(uint16_t isOn)
-{
-    RELAY_2_STATE = isOn;
-    digitalWrite(RELAY_2_PIN, isOn);
-}
+// void toggleRelay2(uint16_t isOn)
+// {
+//     RELAY_2_STATE = isOn;
+//     digitalWrite(RELAY_2_PIN, isOn);
+// }
 
-void toggleRelay3(uint16_t isOn)
-{
-    RELAY_3_STATE = isOn;
-    digitalWrite(RELAY_3_PIN, isOn);
-}
+// void toggleRelay3(uint16_t isOn)
+// {
+//     RELAY_3_STATE = isOn;
+//     digitalWrite(RELAY_3_PIN, isOn);
+// }
 
-void toggleRelay4(uint16_t isOn)
+// void toggleRelay4(uint16_t isOn)
+// {
+//     RELAY_4_STATE = isOn;
+//     digitalWrite(RELAY_4_PIN, isOn);
+// }
+
+/*
+ * Updating functions
+ */
+void updateButtonsStates()
 {
-    RELAY_4_STATE = isOn;
-    digitalWrite(RELAY_4_PIN, isOn);
+    // Buttons on the frond panel
+    BUTTON_1_STATE = digitalRead(BUTTON_1_PIN);
+    BUTTON_2_STATE = digitalRead(BUTTON_2_PIN);
+    BUTTON_3_STATE = digitalRead(BUTTON_3_PIN);
+    BUTTON_4_STATE = digitalRead(BUTTON_4_PIN);
+    BUTTON_5_STATE = digitalRead(BUTTON_5_PIN);
+
+    // Intrusion detection
+    INTRUSION_STATE = digitalRead(INTRUSION_PIN);
+
+    // Update the button LED's
+    digitalWrite(BUTTON_1_LED_PIN, BUTTON_1_STATE);
+    digitalWrite(BUTTON_2_LED_PIN, BUTTON_2_STATE);
+    digitalWrite(BUTTON_3_LED_PIN, BUTTON_3_STATE);
+    digitalWrite(BUTTON_4_LED_PIN, BUTTON_4_STATE);
+    digitalWrite(BUTTON_5_LED_PIN, BUTTON_5_STATE);
 }
 
 /*

@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-const int CASE_INTRUSION_PIN = 9;
+const int CASE_INTRUSION_PIN = 27;
 
 void setup()
 {
@@ -9,7 +9,7 @@ void setup()
     {
         delay(10);
     }
-    pinMode(CASE_INTRUSION_PIN, INPUT);
+    pinMode(CASE_INTRUSION_PIN, INPUT_PULLUP);
 }
 
 void loop()

@@ -7,7 +7,7 @@ const bool DEBUG = true;
 const int BAUDRATE = 9600;
 const unsigned int DELAY_TIME = 250;
 
-const int X_PIN = A13, Y_PIN = A7, BUTTON_PIN = 27;
+const int X_PIN = A13, Y_PIN = A7, BUTTON_PIN = 26;
 AxisJoystick joystick(BUTTON_PIN, X_PIN, Y_PIN);
 
 
